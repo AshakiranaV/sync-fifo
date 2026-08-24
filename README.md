@@ -60,7 +60,13 @@ Test 7 (pointer wraparound)    : PASS
 ALL TESTS PASSED
 ```
 
-The run also dumps `fifo.vcd` for waveform inspection in GTKWave.
+The run also dumps `fifo.vcd` for waveform inspection.
+
+### Waveform
+
+Reset → fill to full (A0–AF) → write-while-full dropped (`FF` never enters, `count` holds at 0x10) → in-order drain to empty:
+
+![sync_fifo waveform](docs/waveform.png)
 
 ## Synthesis (Yosys, `synth_xilinx`, default 16×8 config)
 

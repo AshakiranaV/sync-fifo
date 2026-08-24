@@ -6,8 +6,10 @@
 // - Extra-MSB pointer scheme for full/empty disambiguation
 // ============================================================
 module sync_fifo #(
-    parameter DATA_WIDTH = 8,
-    parameter DEPTH      = 16
+    parameter DATA_WIDTH        = 8,
+    parameter DEPTH             = 16,
+    parameter ALMOST_FULL_LVL   = DEPTH - 2,  // almost_full when count >= this
+    parameter ALMOST_EMPTY_LVL  = 2           // almost_empty when count <= this
 ) (
     input  wire                    clk,
     input  wire                    rst_n,
@@ -20,6 +22,8 @@ module sync_fifo #(
 
     output wire                    full,
     output wire                    empty,
+    output wire                    almost_full,
+    output wire                    almost_empty,
     output wire [$clog2(DEPTH):0]  count
 );
 
@@ -39,6 +43,10 @@ module sync_fifo #(
 
     // Two's-complement subtraction handles pointer wrap with no conditionals
     assign count = wr_ptr - rd_ptr;
+
+    // Programmable threshold flags
+    assign almost_full  = (count >= ALMOST_FULL_LVL);
+    assign almost_empty = (count <= ALMOST_EMPTY_LVL);
 
     // Guard illegal accesses internally
     wire do_write = wr_en && !full;

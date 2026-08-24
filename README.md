@@ -1,6 +1,8 @@
 # Parameterized Synchronous FIFO (Verilog)
 
-Single-clock FIFO with configurable data width and depth, self-checking testbench, verified with Icarus Verilog.
+[![simulation](https://github.com/AshakiranaV/sync-fifo/actions/workflows/sim.yml/badge.svg)](https://github.com/AshakiranaV/sync-fifo/actions/workflows/sim.yml)
+
+Single-clock FIFO with configurable data width and depth, programmable almost-full/almost-empty thresholds, and a self-checking scoreboard testbench. Verified with Icarus Verilog; simulation runs in CI on every push.
 
 ## Specification
 
@@ -8,9 +10,21 @@ Single-clock FIFO with configurable data width and depth, self-checking testbenc
 |---|---|
 | `DATA_WIDTH` | configurable (default 8) |
 | `DEPTH` | configurable, **must be a power of 2** (default 16) |
+| `ALMOST_FULL_LVL` | `almost_full` asserts at `count >= LVL` (default `DEPTH-2`) |
+| `ALMOST_EMPTY_LVL` | `almost_empty` asserts at `count <= LVL` (default 2) |
 | Reset | active-low, asynchronous |
 | Read latency | 1 cycle (registered output) |
-| Flags | `full`, `empty`, `count` |
+| Flags | `full`, `empty`, `almost_full`, `almost_empty`, `count` |
+
+## Project structure
+
+```
+rtl/sync_fifo.v        FIFO RTL
+tb/tb_sync_fifo.v      self-checking testbench (scoreboard-based)
+docs/waveform.png      simulation waveform
+Makefile               sim / wave / synth / clean targets
+.github/workflows/     CI: runs the testbench on every push
+```
 
 ## Design notes
 
@@ -21,7 +35,7 @@ Single-clock FIFO with configurable data width and depth, self-checking testbenc
 
 This is why `DEPTH` must be a power of two — the low bits have to wrap exactly at the array boundary.
 
-**Occupancy** is `wr_ptr - rd_ptr`; two's-complement subtraction handles the wrap case with no conditional logic.
+**Occupancy** is `wr_ptr - rd_ptr`; two's-complement subtraction handles the wrap case with no conditional logic. The threshold flags are simple comparators on `count`.
 
 **Illegal accesses are guarded internally.** A write while `full` or a read while `empty` is dropped rather than corrupting the pointers.
 
@@ -38,18 +52,19 @@ This is why `DEPTH` must be a power of two — the low bits have to wrap exactly
 | 5 | Read-while-empty is ignored |
 | 6 | Simultaneous read + write, steady occupancy |
 | 7 | Pointer wraparound over 2.5×`DEPTH` transactions |
+| 8 | `almost_full` / `almost_empty` assert exactly at their thresholds |
 
 The testbench keeps a software scoreboard queue alongside the DUT — every value read out is compared against the queue, so data integrity is checked on every single pop, not just at test boundaries.
 
 ```bash
-iverilog -o fifo_sim sync_fifo.v tb_sync_fifo.v
-vvp fifo_sim
+make sim      # compile + run testbench (iverilog/vvp)
+make wave     # open build/fifo.vcd in GTKWave
+make synth    # Yosys synth_xilinx + resource stats
 ```
 
 ### Simulation output
 
 ```
-VCD info: dumpfile fifo.vcd opened for output.
 Test 1 (reset flags)           : PASS
 Test 2 (fill to full)          : PASS
 Test 3 (write-while-full)      : PASS
@@ -57,10 +72,9 @@ Test 4 (drain, data integrity) : PASS
 Test 5 (read-while-empty)      : PASS
 Test 6 (simultaneous rd+wr)    : PASS
 Test 7 (pointer wraparound)    : PASS
+Test 8 (almost flags)          : PASS
 ALL TESTS PASSED
 ```
-
-The run also dumps `fifo.vcd` for waveform inspection.
 
 ### Waveform
 
@@ -72,20 +86,20 @@ Reset → fill to full (A0–AF) → write-while-full dropped (`FF` never enters
 
 | Resource | Count |
 |---|---|
-| Estimated logic cells | 67 |
-| LUTs (LUT2–LUT6) | 78 |
+| Estimated logic cells | 69 |
+| LUTs (LUT2–LUT6) | 80 |
 | Flip-flops | 146 (128 FDRE memory + 18 FDCE pointers/output reg) |
 | CARRY4 | 6 |
-| MUXF7/F8 | 9 |
 
-Yosys maps the 16×8 memory array to registers rather than block RAM at this depth (`Warning: Replacing memory \mem with list of registers`) — expected for a FIFO this small; larger depths would infer distributed or block RAM in Vivado.
+Yosys maps the 16×8 memory array to registers rather than block RAM at this depth — expected for a FIFO this small; larger depths would infer distributed or block RAM in Vivado.
 
 ## Future work
 
-- Almost-full / almost-empty programmable threshold flags
 - Asynchronous (dual-clock) variant with Gray-code pointers and 2-flop synchronizers
-- Formal property checks (no overflow, no underflow, `full && empty` never both asserted)
+- Formal property checks with SymbiYosys (no overflow, no underflow, `full && empty` never both asserted)
 
 ## Author
 
 Ashakirana V — B.E. Electronics and Communication Engineering, CMR Institute of Technology (VTU), Bengaluru
+
+MIT licensed.

@@ -8,6 +8,7 @@
 //   5  Read-while-empty is ignored
 //   6  Simultaneous read + write, steady occupancy
 //   7  Pointer wraparound over 2.5*DEPTH transactions
+//   8  Almost-full / almost-empty threshold flags
 // ============================================================
 `timescale 1ns/1ps
 
@@ -25,7 +26,12 @@ module tb_sync_fifo;
     wire [DATA_WIDTH-1:0] rd_data;
     wire                  full;
     wire                  empty;
+    wire                  almost_full;
+    wire                  almost_empty;
     wire [ADDR_WIDTH:0]   count;
+
+    localparam AF_LVL = DEPTH - 2;
+    localparam AE_LVL = 2;
 
     integer errors = 0;
     integer i;
@@ -37,7 +43,9 @@ module tb_sync_fifo;
         .clk(clk), .rst_n(rst_n),
         .wr_en(wr_en), .wr_data(wr_data),
         .rd_en(rd_en), .rd_data(rd_data),
-        .full(full), .empty(empty), .count(count)
+        .full(full), .empty(empty),
+        .almost_full(almost_full), .almost_empty(almost_empty),
+        .count(count)
     );
 
     // 100 MHz clock
@@ -167,6 +175,30 @@ module tb_sync_fifo;
         check(empty === 1'b1, "T7: not empty after wraparound sweep");
         check(count === 0,    "T7: count nonzero after wraparound sweep");
         $display("Test 7 (pointer wraparound)    : %0s", errors ? "FAIL" : "PASS");
+
+        // ---- Test 8: almost_full / almost_empty thresholds ----
+        // empty: almost_empty set, almost_full clear
+        check(almost_empty === 1'b1, "T8: almost_empty clear when empty");
+        check(almost_full  === 1'b0, "T8: almost_full set when empty");
+        // fill to AF_LVL-1: almost_full still clear
+        for (i = 0; i < AF_LVL - 1; i = i + 1)
+            push(i[7:0]);
+        check(almost_full === 1'b0, "T8: almost_full set below threshold");
+        // one more write crosses the threshold
+        push(8'hEE);
+        check(almost_full === 1'b1, "T8: almost_full clear at threshold");
+        // almost_empty must be clear well above its threshold
+        check(almost_empty === 1'b0, "T8: almost_empty set above threshold");
+        // drain down to AE_LVL: almost_empty asserts exactly at the boundary
+        while (count > AE_LVL + 1)
+            pop;
+        check(almost_empty === 1'b0, "T8: almost_empty set above AE_LVL");
+        pop;
+        check(almost_empty === 1'b1, "T8: almost_empty clear at AE_LVL");
+        // drain the rest
+        while (!empty)
+            pop;
+        $display("Test 8 (almost flags)          : %0s", errors ? "FAIL" : "PASS");
 
         // ---- Summary ----
         if (errors == 0)
